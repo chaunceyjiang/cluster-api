@@ -33,6 +33,7 @@ import (
 	"sigs.k8s.io/cluster-api/feature"
 	"sigs.k8s.io/cluster-api/internal/hooks"
 	"sigs.k8s.io/cluster-api/util"
+	"sigs.k8s.io/cluster-api/util/patch"
 	"sigs.k8s.io/cluster-api/util/predicates"
 )
 
@@ -77,8 +78,33 @@ func (r *ClusterResourceSetBindingReconciler) Reconcile(ctx context.Context, req
 		// Error reading the object - requeue the request.
 		return ctrl.Result{}, err
 	}
-
-	cluster, err := util.GetOwnerCluster(ctx, r.Client, binding.ObjectMeta)
+	// Before 1.4 cluster name was stored as ownerRef; this code migrated this value to
+	// the spec.clusterName field if necessary.
+	clusterName := binding.Spec.ClusterName
+	if clusterName == "" {
+		// Initialize the patch helper.
+		patchHelper, err := patch.NewHelper(binding, r.Client)
+		if err != nil {
+			log.Error(err, "Failed to configure the patch helper")
+			return ctrl.Result{}, err
+		}
+		// Update the clusterName field of the existing ClusterResourceSetBindings with ownerReferences.
+		// More details please refer to: https://github.com/kubernetes-sigs/cluster-api/issues/7669.
+		if clusterName, err = getClusterNameFromOwnerRef(binding.ObjectMeta); err != nil {
+			return ctrl.Result{}, err
+		} else if clusterName == "" {
+			log.Info("ownerRef not found for the ClusterResourceSetBinding")
+			return ctrl.Result{}, nil
+		}
+		binding.Spec.ClusterName = clusterName
+		if err = patchHelper.Patch(ctx, binding); err != nil {
+			log.Error(err, "Failed to patch ClusterResourceSetBinding to add spec.clusterName")
+			return ctrl.Result{}, err
+		}
+		// Will enter the next Reconcile
+		return ctrl.Result{}, nil
+	}
+	cluster, err := util.GetClusterByName(ctx, r.Client, req.Namespace, clusterName)
 	if err != nil {
 		if apierrors.IsNotFound(err) {
 			// If the owner cluster is already deleted, delete its ClusterResourceSetBinding
@@ -86,10 +112,6 @@ func (r *ClusterResourceSetBindingReconciler) Reconcile(ctx context.Context, req
 			return ctrl.Result{}, r.Client.Delete(ctx, binding)
 		}
 		return ctrl.Result{}, err
-	}
-	if cluster == nil {
-		log.Info("ownerRef not found for the ClusterResourceSetBinding")
-		return ctrl.Result{}, nil
 	}
 	// If the owner cluster is in deletion process, delete its ClusterResourceSetBinding
 	if !cluster.DeletionTimestamp.IsZero() {
