@@ -24,6 +24,7 @@ import (
 	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	"k8s.io/apimachinery/pkg/util/validation/field"
 	"k8s.io/utils/pointer"
+	"k8s.io/utils/ptr"
 
 	clusterv1 "sigs.k8s.io/cluster-api/api/v1beta1"
 )
@@ -182,6 +183,53 @@ func Test_convertToAPIExtensionsJSONSchemaProps(t *testing.T) {
 						Format:    "uri",
 						MinLength: pointer.Int64(2),
 						MaxLength: pointer.Int64(4),
+					},
+				},
+			},
+		},
+		{
+			name: "pass for schema validation with CEL validation rules",
+			schema: &clusterv1.JSONSchemaProps{
+				Items: &clusterv1.JSONSchemaProps{
+					Type:      "integer",
+					Minimum:   ptr.To[int64](1),
+					Format:    "uri",
+					MinLength: ptr.To[int64](2),
+					MaxLength: ptr.To[int64](4),
+					XValidations: clusterv1.ValidationRules{{
+						Rule:              "self > 0",
+						Message:           "value must be greater than 0",
+						MessageExpression: "value must be greater than 0",
+						FieldPath:         "a.field.path",
+					}, {
+						Rule:              "self > 0",
+						Message:           "value must be greater than 0",
+						MessageExpression: "value must be greater than 0",
+						FieldPath:         "a.field.path",
+						Reason:            ptr.To(clusterv1.FieldValueErrorReason("a reason")),
+					}},
+				},
+			},
+			want: &apiextensions.JSONSchemaProps{
+				Items: &apiextensions.JSONSchemaPropsOrArray{
+					Schema: &apiextensions.JSONSchemaProps{
+						Type:      "integer",
+						Minimum:   ptr.To[float64](1),
+						Format:    "uri",
+						MinLength: ptr.To[int64](2),
+						MaxLength: ptr.To[int64](4),
+						XValidations: apiextensions.ValidationRules{{
+							Rule:              "self > 0",
+							Message:           "value must be greater than 0",
+							MessageExpression: "value must be greater than 0",
+							FieldPath:         "a.field.path",
+						}, {
+							Rule:              "self > 0",
+							Message:           "value must be greater than 0",
+							MessageExpression: "value must be greater than 0",
+							FieldPath:         "a.field.path",
+							Reason:            ptr.To(apiextensions.FieldValueErrorReason("a reason")),
+						}},
 					},
 				},
 			},

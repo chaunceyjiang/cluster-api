@@ -24,6 +24,7 @@ import (
 	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	"k8s.io/apimachinery/pkg/util/validation/field"
 	"k8s.io/utils/pointer"
+	"k8s.io/utils/ptr"
 
 	clusterv1 "sigs.k8s.io/cluster-api/api/v1beta1"
 )
@@ -163,5 +164,33 @@ func convertToAPIExtensionsJSONSchemaProps(schema *clusterv1.JSONSchemaProps, fl
 		}
 	}
 
+	if schema.XValidations != nil {
+		props.XValidations = convertToAPIExtensionsXValidations(schema.XValidations)
+	}
+
 	return props, allErrs
+}
+
+func convertToAPIExtensionsXValidations(validationRules clusterv1.ValidationRules) apiextensions.ValidationRules {
+	apiExtValidationRules := make(apiextensions.ValidationRules, 0, len(validationRules))
+
+	for _, validationRule := range validationRules {
+		var reason *apiextensions.FieldValueErrorReason
+		if validationRule.Reason != nil {
+			reason = ptr.To(apiextensions.FieldValueErrorReason(*validationRule.Reason))
+		}
+
+		apiExtValidationRules = append(
+			apiExtValidationRules,
+			apiextensions.ValidationRule{
+				Rule:              validationRule.Rule,
+				Message:           validationRule.Message,
+				MessageExpression: validationRule.MessageExpression,
+				Reason:            reason,
+				FieldPath:         validationRule.FieldPath,
+			},
+		)
+	}
+
+	return apiExtValidationRules
 }
